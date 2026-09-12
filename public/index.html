@@ -260,6 +260,7 @@
     .advisor-table th:first-child, .advisor-table td:first-child { text-align: left; }
     .advisor-table th { background: var(--teal-light); color: var(--teal-dark); }
     .advisor-note { color: var(--muted); font-size: 14px; }
+    .cards-compact { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); max-width: 620px; margin-bottom: 20px; }
   </style>
 </head>
 
@@ -281,6 +282,18 @@
       <article class="card completed"><div class="card-label">Average RO</div><div class="card-value" id="average-ro">Unavailable</div></article>
       <article class="card wip"><div class="card-label">Hours sold</div><div class="card-value" id="hours-sold">Unavailable</div><p>Approved labor · excludes archived jobs</p></article>
       <article class="card"><div class="card-label">Gross profit · dollars and percentage</div><div class="card-value">Unavailable</div><p>Cost data not available through the verified API</p></article>
+    </section>
+    <section class="advisor-section" aria-labelledby="month-heading">
+      <h2 id="month-heading">Month to date</h2>
+      <p id="month-status" role="status">Loading month-to-date report…</p>
+      <section class="cards cards-compact" aria-label="Month to date metrics">
+        <article class="card posted"><div class="card-label">Sales month to date</div><div class="card-value" id="month-sales">Unavailable</div><p>After discounts · before taxes</p></article>
+        <article class="card estimates"><div class="card-label">Repair orders</div><div class="card-value" id="month-ro-count">Unavailable</div><p>Posted / Accounts Receivable</p></article>
+      </section>
+      <div class="advisor-table-scroll" tabindex="0" role="region" aria-label="Sales by week this month">
+        <table class="advisor-table"><thead><tr><th scope="col">Week</th><th scope="col">Sales</th><th scope="col">RO count</th></tr></thead><tbody id="month-week-rows"></tbody></table>
+      </div>
+      <p class="advisor-note">Calendar month (America/Chicago), 1st through the reporting date. Weekly rows use calendar weeks (Monday–Sunday); a week overlapping the 1st of the month is partial and reconciles to the total above.</p>
     </section>
     <section class="advisor-section" aria-labelledby="advisor-heading">
       <h2 id="advisor-heading">Service advisors</h2>
@@ -308,6 +321,7 @@
     </section>
   </main>
   <script src="/dashboard.js" defer></script>
+  <script src="/month-summary.js" defer></script>
   <script src="/technicians.js" defer></script>
 </body>
 </html>
