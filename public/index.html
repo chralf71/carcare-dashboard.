@@ -204,6 +204,13 @@
         flex-direction: column;
       }
     }
+    .advisor-section { margin-top: 32px; }
+    .advisor-table-scroll { overflow-x: auto; background: white; border: 1px solid #dfe3e8; border-radius: 12px; }
+    .advisor-table { width: 100%; border-collapse: collapse; min-width: 680px; }
+    .advisor-table th, .advisor-table td { padding: 14px; text-align: right; border-bottom: 1px solid #e5e7eb; }
+    .advisor-table th:first-child, .advisor-table td:first-child { text-align: left; }
+    .advisor-table th { background: #eef2f6; }
+    .advisor-note { color: #52606d; font-size: 14px; }
   </style>
 </head>
 
@@ -222,6 +229,18 @@
       <article class="card completed"><div class="card-label">Average RO</div><div class="card-value" id="average-ro">Unavailable</div></article>
       <article class="card wip"><div class="card-label">Hours sold</div><div class="card-value" id="hours-sold">Unavailable</div><p>Approved labor · excludes archived jobs</p></article>
       <article class="card"><div class="card-label">Gross profit · dollars and percentage</div><div class="card-value">Unavailable</div><p>Cost data not available through the verified API</p></article>
+    </section>
+    <section class="advisor-section" aria-labelledby="advisor-heading">
+      <h2 id="advisor-heading">Service advisors</h2>
+      <p id="advisor-status" role="status">Loading advisor report…</p>
+      <div class="advisor-table-scroll" tabindex="0" role="region" aria-label="Service advisor daily totals">
+        <table class="advisor-table">
+          <thead><tr><th scope="col">Advisor</th><th scope="col">Daily sales</th><th scope="col">RO count</th><th scope="col">Average RO</th><th scope="col">Hours sold</th><th scope="col">Gross profit</th></tr></thead>
+          <tbody id="advisor-rows"></tbody>
+        </table>
+      </div>
+      <p class="advisor-note">All observed advisors · sales after discounts and before taxes. Gross profit: Cost data not available through the verified API.</p>
+      <p class="advisor-note" id="advisor-reconciliation"></p>
     </section>
     <section class="connection-panel" aria-live="polite">
       <div id="connection-text">Loading daily report…</div>

@@ -1,10 +1,10 @@
 # CarCare daily dashboard
 
-Phase 1 reports one shop's daily financial activity in `America/Chicago`. It uses server-side Tekmetric requests and returns aggregates only. No customer records are returned to the browser.
+The dashboard reports one shop's daily financial activity in `America/Chicago`. It uses server-side Tekmetric requests and returns aggregates only. No customer records are returned to the browser.
 
 ## Runtime and configuration
 
-Requires Node.js 22 or newer with built-in `fetch`, `Intl`, and the Node test runner. There are no package dependencies. Use a serverless host that maps `api/*.js` to `/api/*` with the existing CommonJS `(req, res)` interface and serves the root HTML and `/public/dashboard.js`. A static file server alone cannot execute API handlers.
+Requires Node.js 22 or newer with built-in `fetch`, `Intl`, and the Node test runner. There are no package dependencies. Use a serverless host that maps `api/*.js` to `/api/*` with the existing CommonJS `(req, res)` interface and serves `public/index.html` at `/` and `public/dashboard.js` at `/dashboard.js`. A static file server alone cannot execute API handlers.
 
 Set these variables in the server environment (see `.env.example` for empty placeholders):
 
@@ -47,10 +47,28 @@ Job failures leave validated sales/count/ARO available but make hours unavailabl
 
 `/api/test-token`, `/api/shops`, `/api/employees-test`, `/api/repair-orders-test`, and `/api/repair-orders-sample` return 404 by default. If explicitly enabled, all are connectivity-only checks returning `{ connected: true }` or a generic failure. They no longer list shops, employees, fields, tokens, or sample records.
 
-**Production access protection remains required.** Phase 1 does not implement login or a rate-limit service. Before exposing real financial data, put the page and every API route behind an identity-aware access gateway or server-validated sessions, use an explicit staff allowlist and MFA, and protect preview deployments. Keep diagnostics disabled outside protected administrative use. Configure platform rate limiting; request concurrency alone is not rate limiting across visitors. Store credentials only in server secret storage and never commit `.env` or private API fixtures.
+**Production access protection remains required.** This application does not implement login or a rate-limit service. Before exposing real financial data, put the page and every API route behind an identity-aware access gateway or server-validated sessions, use an explicit staff allowlist and MFA, and protect preview deployments. Keep diagnostics disabled outside protected administrative use. Configure platform rate limiting; request concurrency alone is not rate limiting across visitors. Store credentials only in server secret storage and never commit `.env` or private API fixtures.
 
 ## Tests and release acceptance
 
 Run `npm test` or `node --test test/*.test.js`. Tests use synthetic records and mocked transport only; no Tekmetric account or credentials are needed. Coverage includes pagination, statuses 5/6, duplicate ROs/jobs/labor, malformed fields, exact cents and discounts, empty days, Chicago midnight/DST boundaries, unavailable hours, timeouts, host restrictions, diagnostics, sanitization, concurrency, and stale browser responses.
 
 Before production, compare the five cards against Tekmetric End of Day for the same shop/date, including A/R, fees/discounts, a multi-page day, empty days, and midnight records. Confirm filter encoding, page envelope, status shape, and ID semantics. Reopened/reposted/deleted orders and refunds can affect historical reconciliation; this implementation uses the current 5/6 population and posted dates, without inventing adjustment rules. Historical days are recomputed on refresh. Labor/sublet costs remain unverified and gross profit remains unavailable.
+
+## Phase 2: daily service advisors
+
+The existing top-level `metrics` response is preserved. `/api/dashboard-summary` adds `advisorReport` with `status` (`complete`, `partial`, or `unavailable`), `directoryStatus`, `selectionMode: "all"`, `rows`, and `reconciliation`. Each row contains only a stable key, employee ID (or null for exception buckets), display name, assignment status, and the same aggregate metric entries as the shop cards. No RO/job records or employee contact fields are serialized.
+
+The default is all advisors observed on qualifying ROs for the selected Chicago date. There is no selection filter, production-specific ID/name matching, or additional environment variable. Production and sandbox each use their own shop employee directory. No zero-order employee roster is displayed; a verified empty day has no advisor rows. An observed zero-sales RO still contributes one RO and a zero ARO.
+
+RO `serviceWriterId` joins to employee `id`. Positive integer IDs and positive decimal strings are accepted. Null/missing IDs appear under **Unassigned**; malformed IDs and conflicting assignments on duplicate ROs appear under **Invalid assignment**. Unmatched valid IDs are displayed separately as **Unknown advisor** with their ID, but only after the employee directory is fully validated. An employee-directory failure instead produces **Advisor name unavailable**, retaining the ID and valid allocated figures. Exception buckets appear only when applicable. Disabled employees are not excluded from historical activity, and matching never relies on a name or inferred employee role.
+
+`GET /api/v1/employees` uses the same client, token, shop filter, strict pagination envelope and size 100 as other requests. It runs after the shop dataset is obtained, within the same 45-second upstream budget, so a directory failure does not invalidate shop figures. Failed concurrent job workers finish before employee retrieval starts; new jobs stop scheduling after a failure. Names require string `firstName` and `lastName` with a nonempty combined display name. Employee endpoint pagination, field types, shop association, and whether disabled employees are included require live sandbox verification. Unexpected structures make the directory unavailable; no alternative undocumented response shapes are guessed.
+
+Advisor sales and count partition the shop's already deduplicated RO population, including all exception buckets. ARO is calculated from each group's aggregate sales/count, not averaged across ROs. Jobs retain their parent RO association. Approved, non-archived hours are deduplicated by job/labor ID. If a job or labor ID appears under multiple parent ROs, advisor hours are unavailable for the report rather than assigned arbitrarily; independently valid shop hours retain Phase 1 global deduplication behavior. Failed job data also leaves advisor hours unavailable. Gross profit always remains unavailable with the existing verified-cost explanation.
+
+Reconciliation checks sum sales cents and RO counts with integer arithmetic and reports `matched`, `mismatch`, or `unavailable` per metric. Hours use unrounded values and a tolerance of `1e-9 * max(1, abs(advisor sum), abs(shop hours))`. ARO and gross profit are not summed. Unknown/invalid assignments keep the report partial even if monetary reconciliation matches. Directory failure keeps the report partial with accurate numeric reconciliation where possible.
+
+The responsive advisor table shares the existing refresh generation guard, clears stale rows, renders names with `textContent`, and shows reconciliation status. The output directory remains `public`; root `api`, `lib`, and `vercel.json` retain their deployment roles. Diagnostics remain disabled by default; do not enable them for advisor discovery.
+
+Additional synthetic tests cover status allocation, discounts, repeated RO/job/labor IDs, conflicting ownership and advisor assignments, missing/unknown/invalid IDs, employee pagination/failure, duplicate names, disabled employees, zero-order days, zero-value ROs, exact/tolerant reconciliation, privacy, and safe rendering. Before production, validate employee schemas and ID uniqueness in sandbox, and establish whether historical `serviceWriterId` reflects the advisor at posting or subsequent reassignment. No historical attribution rule is inferred.
