@@ -5,7 +5,7 @@
     body.replaceChildren();
     const report = data?.technicianReport;
     if (!report || report.status === 'unavailable') {
-      status.textContent = 'Unavailable — complete technician data could not be verified within retrieval limits. Try refreshing.';
+      status.textContent = 'Unavailable — ' + (typeof report?.reason === 'string' ? report.reason : 'Technician request failed. Try refreshing.');
       return;
     }
     for (const row of report.rows) {
@@ -27,9 +27,10 @@
   }
   function createTechnicianController({ createLoader, fetchImpl, pending, render, failure }) {
     const loader = mode => createLoader({ fetchImpl,
+      acceptError: data => data?.technicianReport?.status === 'unavailable',
       urlFor: date => `/api/technician-summary?report=${mode}` + (mode === 'completed' ? `&date=${encodeURIComponent(date)}` : ''),
       validate: (data, date) => data.report === mode && (mode === 'current' ? data.historical === false : data.date === date)
-        && data.technicianReport && Array.isArray(data.technicianReport.rows) && Number.isFinite(Date.parse(data.asOf)),
+        && data.technicianReport && Array.isArray(data.technicianReport.rows) && (data.technicianReport.status === 'unavailable' || Number.isFinite(Date.parse(data.asOf))),
       pending: date => pending(mode, date), render: data => render(mode, data), failure: () => failure(mode),
     });
     const completed = loader('completed'), current = loader('current');

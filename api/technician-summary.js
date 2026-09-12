@@ -1,6 +1,6 @@
 const { createClient } = require('../lib/tekmetric');
 const { chicagoDate, validateDate, TIMEZONE } = require('../lib/shop-date');
-const { technicianData } = require('../lib/technician-data');
+const { technicianData, RetrievalFailure } = require('../lib/technician-data');
 const { buildTechnicianReport, unavailableReport } = require('../lib/technician-report');
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -15,7 +15,8 @@ module.exports = async function handler(req, res) {
     const data = await technicianData(createClient(), mode);
     const technicianReport = buildTechnicianReport(data.records, data.directory, mode, date);
     return res.status(200).json({ report: mode, timezone: TIMEZONE, ...identity, startedAt: data.startedAt, asOf: data.asOf, technicianReport });
-  } catch {
-    return res.status(503).json({ report: mode, timezone: TIMEZONE, ...identity, technicianReport: unavailableReport(), error: 'Technician report unavailable. Try again later.' });
+  } catch (error) {
+    const reason = error instanceof RetrievalFailure ? error.reason : undefined;
+    return res.status(503).json({ report: mode, timezone: TIMEZONE, ...identity, technicianReport: unavailableReport(reason), error: 'Technician report unavailable. Try again later.' });
   }
 };

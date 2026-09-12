@@ -9,7 +9,7 @@
     return `${parts.year}-${parts.month}-${parts.day}`;
   }
   // Serializes transport requests, coalesces date changes, and rejects stale results.
-  function createLoader({ fetchImpl, render, pending, failure,
+  function createLoader({ fetchImpl, render, pending, failure, acceptError = () => false,
     urlFor = date => `/api/dashboard-summary?date=${encodeURIComponent(date)}`,
     validate = (data, date) => data.date === date && data.metrics && Number.isFinite(Date.parse(data.updatedAt)),
   }) {
@@ -27,7 +27,7 @@
           try {
             const response = await fetchImpl(urlFor(date), { cache: 'no-store', signal: controller.signal });
             const data = await response.json();
-            if (!response.ok || !validate(data, date)) throw new Error('Unavailable');
+            if ((!response.ok && !acceptError(data)) || !validate(data, date)) throw new Error('Unavailable');
             if (version === generation) render(data);
           } catch {
             if (version === generation) failure(date);
