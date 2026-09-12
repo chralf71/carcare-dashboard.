@@ -1,7 +1,9 @@
 (function (root) {
-  function renderTechnicians(mode, data, doc = document) {
-    const body = doc.getElementById(`technician-${mode}-rows`);
-    const status = doc.getElementById(`technician-${mode}-status`);
+  const shared = typeof module !== 'undefined' ? require('./dashboard') : null;
+  function money(cents) { return (shared || root.DailyDashboard).formatCents(cents); }
+  function renderTechnicianWeek(data, doc = document) {
+    const body = doc.getElementById('technician-week-rows');
+    const status = doc.getElementById('technician-week-status');
     body.replaceChildren();
     const report = data?.technicianReport;
     if (!report || report.status === 'unavailable') {
@@ -12,49 +14,45 @@
       const tr = doc.createElement('tr'), name = doc.createElement('td');
       name.textContent = row.name + (['unknown', 'name-unavailable'].includes(row.assignmentStatus) ? ` (${row.employeeId})` : '');
       tr.appendChild(name);
-      for (const key of ['hours', 'jobCount']) {
-        const td = doc.createElement('td'), value = row.metrics?.[key];
-        td.textContent = value?.available && typeof value.value === 'number' && Number.isFinite(value.value)
-          ? value.value.toLocaleString('en-US', { maximumFractionDigits: 2 }) : 'Unavailable';
-        tr.appendChild(td);
-      }
+      const hours = doc.createElement('td'), hoursMetric = row.metrics?.hoursSold;
+      hours.textContent = hoursMetric?.available && typeof hoursMetric.value === 'number' && Number.isFinite(hoursMetric.value)
+        ? hoursMetric.value.toLocaleString('en-US', { maximumFractionDigits: 2 }) : 'Unavailable';
+      tr.appendChild(hours);
+      const sales = doc.createElement('td'), salesMetric = row.metrics?.laborSalesCents;
+      sales.textContent = salesMetric?.available && typeof salesMetric.value === 'number' && Number.isFinite(salesMetric.value)
+        ? money(salesMetric.value) : 'Unavailable';
+      tr.appendChild(sales);
       body.appendChild(tr);
     }
-    const stamp = new Date(data.asOf).toLocaleString('en-US', { timeZone: 'America/Chicago', timeZoneName: 'short' });
-    status.textContent = `${mode === 'current' ? 'Current snapshot as of' : 'Updated'} ${stamp}. `
-      + (report.rows.length ? 'Totals reconciled within this report.' : 'No qualifying work found.')
+    const range = data.weekStart === data.weekEnd ? data.weekStart : `${data.weekStart} – ${data.weekEnd}`;
+    status.textContent = `Week of ${range}. `
+      + (report.rows.length ? 'Totals reconciled within this report.' : 'No qualifying posted repair orders this week.')
       + (report.status === 'partial' ? ' Assignment/name information is partial; see exception buckets.' : '');
   }
-  function createTechnicianController({ createLoader, fetchImpl, pending, render, failure }) {
-    const loader = mode => createLoader({ fetchImpl,
+  function createTechnicianWeekController({ createLoader, fetchImpl, pending, render, failure }) {
+    return createLoader({ fetchImpl,
       acceptError: data => data?.technicianReport?.status === 'unavailable',
-      urlFor: date => `/api/technician-summary?report=${mode}` + (mode === 'completed' ? `&date=${encodeURIComponent(date)}` : ''),
-      validate: (data, date) => data.report === mode && (mode === 'current' ? data.historical === false : data.date === date)
+      urlFor: date => `/api/technician-summary?date=${encodeURIComponent(date)}`,
+      validate: (data, date) => data.report === 'week' && data.date === date
         && data.technicianReport && Array.isArray(data.technicianReport.rows) && (data.technicianReport.status === 'unavailable' || Number.isFinite(Date.parse(data.asOf))),
-      pending: date => pending(mode, date), render: data => render(mode, data), failure: () => failure(mode),
+      pending, render, failure,
     });
-    const completed = loader('completed'), current = loader('current');
-    return {
-      dateChanged(date) { return completed.refresh(date, true); },
-      refresh(date) { return Promise.all([completed.refresh(date), current.refresh('current')]); },
-    };
   }
   function mount() {
     const date = document.getElementById('reporting-date');
-    const controller = createTechnicianController({
+    const loader = createTechnicianWeekController({
       createLoader: root.DailyDashboard.createLoader, fetchImpl: (...args) => fetch(...args),
-      pending(mode, selected) {
-        document.getElementById(`technician-${mode}-rows`).replaceChildren();
-        document.getElementById(`technician-${mode}-status`).textContent = 'Loading…';
-        if (mode === 'completed') document.getElementById('technician-completed-heading').textContent = `Completed on ${selected}`;
+      pending() {
+        document.getElementById('technician-week-rows').replaceChildren();
+        document.getElementById('technician-week-status').textContent = 'Loading…';
       },
-      render: renderTechnicians, failure: mode => renderTechnicians(mode, null),
+      render: data => renderTechnicianWeek(data), failure: () => renderTechnicianWeek(null),
     });
-    date.addEventListener('change', () => controller.dateChanged(date.value));
-    document.getElementById('refresh-button').addEventListener('click', () => controller.refresh(date.value));
-    controller.refresh(date.value);
-    setInterval(() => controller.refresh(date.value), 120000);
+    date.addEventListener('change', () => loader.refresh(date.value, true));
+    document.getElementById('refresh-button').addEventListener('click', () => loader.refresh(date.value));
+    loader.refresh(date.value);
+    setInterval(() => loader.refresh(date.value), 120000);
   }
-  if (typeof module !== 'undefined') module.exports = { createTechnicianController, renderTechnicians };
-  else { root.TechnicianDashboard = { createTechnicianController, renderTechnicians }; mount(); }
+  if (typeof module !== 'undefined') module.exports = { createTechnicianWeekController, renderTechnicianWeek };
+  else { root.TechnicianDashboard = { createTechnicianWeekController, renderTechnicianWeek }; mount(); }
 })(typeof window === 'undefined' ? globalThis : window);
