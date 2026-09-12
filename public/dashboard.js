@@ -78,13 +78,14 @@
   }
   function mount() {
     const byId = id => document.getElementById(id);
-    const date = byId('reporting-date'), button = byId('refresh-button');
+    const date = byId('reporting-date'), button = byId('refresh-button'), dot = byId('connection-dot');
     const metrics = { salesCents: 'daily-sales', repairOrderCount: 'ro-count', averageRoCents: 'average-ro', hoursSold: 'hours-sold' };
     function clear() { renderAdvisors(null); Object.values(metrics).forEach(id => { byId(id).textContent = 'Unavailable'; }); }
+    function setDot(state) { dot.classList.remove('connected', 'error'); if (state) dot.classList.add(state); }
     const loader = createLoader({
       fetchImpl: (...args) => fetch(...args),
       pending(day) {
-        clear(); button.disabled = true;
+        clear(); button.disabled = true; setDot(null);
         byId('connection-text').textContent = 'Loading daily report…';
         byId('last-updated').textContent = `${day} · America/Chicago`;
       },
@@ -98,12 +99,12 @@
         }
         renderAdvisors(data.advisorReport);
         if (data.advisorReport?.status !== 'complete') partial = true;
-        button.disabled = false;
+        button.disabled = false; setDot('connected');
         byId('connection-text').textContent = partial ? 'Report loaded · some metrics unavailable' : 'Daily report loaded';
         byId('last-updated').textContent = `${data.date} · Updated ${new Date(data.updatedAt).toLocaleString('en-US', { timeZone: 'America/Chicago', timeZoneName: 'short' })}`;
       },
       failure() {
-        clear(); button.disabled = false;
+        clear(); button.disabled = false; setDot('error');
         byId('connection-text').textContent = 'Daily data unavailable. Try again later.';
       },
     });
