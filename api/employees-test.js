@@ -44,61 +44,35 @@ module.exports = async function handler(req, res) {
     }
 
     const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
 
-    let page = 0;
-    let totalPages = 1;
-    let allEmployees = [];
-
-    while (page < totalPages && page < 20) {
-      const requestUrl =
-        `${baseUrl}/api/v1/employees` +
-        `?page=${page}&size=100`;
-
-      const employeeResponse = await fetch(requestUrl, {
+    const employeeResponse = await fetch(
+      `${baseUrl}/api/v1/employees?page=0&size=100`,
+      {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${tokenData.access_token}`,
           Accept: "application/json",
         },
+      }
+    );
+
+    if (!employeeResponse.ok) {
+      return res.status(employeeResponse.status).json({
+        connected: false,
+        error: "Unable to retrieve employees",
+        status: employeeResponse.status,
       });
-
-      if (!employeeResponse.ok) {
-        return res.status(employeeResponse.status).json({
-          connected: false,
-          error: "Unable to retrieve employees",
-          status: employeeResponse.status,
-        });
-      }
-
-      const data = await employeeResponse.json();
-
-      const pageEmployees = Array.isArray(data)
-        ? data
-        : data.content ||
-          data.data ||
-          data.employees ||
-          [];
-
-      allEmployees = allEmployees.concat(pageEmployees);
-
-      if (Array.isArray(data)) {
-        totalPages = 1;
-      } else if (typeof data.totalPages === "number") {
-        totalPages = data.totalPages;
-      } else if (typeof data.totalElements === "number") {
-        totalPages = Math.ceil(data.totalElements / 100);
-      } else {
-        totalPages = 1;
-      }
-
-      page += 1;
     }
 
-    const shopEmployees = allEmployees.filter((employee) => {
-      if (String(employee.shopId || "") === String(shopId)) {
-        return true;
-      }
+    const data = await employeeResponse.json();
 
+    const employees = Array.isArray(data)
+      ? data
+      : data.content ||
+        data.data ||
+        data.employees ||
+        [];
+
+    const shopEmployees = employees.filter((employee) => {
       if (!Array.isArray(employee.shops)) {
         return false;
       }
@@ -118,14 +92,13 @@ module.exports = async function handler(req, res) {
       firstName: employee.firstName || "",
       lastName: employee.lastName || "",
       role: employee.employeeRole || null,
-      payType: employee.employeePayType || null,
       disabled: Boolean(employee.disabled),
     }));
 
     return res.status(200).json({
       connected: true,
       shopId: Number(shopId),
-      allSandboxEmployeesChecked: allEmployees.length,
+      employeesChecked: employees.length,
       shopEmployeesReturned: safeEmployees.length,
       employees: safeEmployees,
     });
