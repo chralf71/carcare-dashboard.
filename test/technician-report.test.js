@@ -10,14 +10,15 @@ const line = (id, technicianId = 11, hours = 1.5, complete = false) => ({ id, te
 const job = (id = 1, extra = {}) => ({ id, repairOrderId: 1, technicianId: 11, authorized: true, selected: true, archived: false, completedDate: '2026-09-12T12:00:00Z', labor: [line(id)], ...extra });
 const page = (rows, number = 0) => ({ content: rows.slice(number * 100, (number + 1) * 100), number, size: 100, totalElements: rows.length, totalPages: Math.ceil(rows.length / 100) });
 const metric = (result, name) => result.totals[name].value;
-function api(orders = [], jobs = [], employees = [], failEmployees = false) {
+function api(orders = [], jobsByRO = {}, employees = [], failEmployees = false) {
   const calls = [];
   return { shop: '1', calls, async get(path, query) {
     calls.push({ path, ...query });
     assert.equal(query.shop, '1');
-    if (path === '/employees' && failEmployees) throw new Error('SYNTHETIC_PRIVATE_ERROR');
-    const rows = path === '/employees' ? employees : path === '/repair-orders' ? orders.filter(ro => [query.repairOrderStatusId].flat().includes(ro.repairOrderStatus.id)) : query.repairOrderStatusId !== undefined ? jobs.filter(j => orders.some(ro => ro.id === j.repairOrderId && [query.repairOrderStatusId].flat().includes(ro.repairOrderStatus.id))) : query.repairOrderId === undefined ? jobs : jobs.filter(j => String(j.repairOrderId) === query.repairOrderId);
-    return page(rows, query.page);
+    if (path === '/employees') { if (failEmployees) throw new Error('SYNTHETIC_PRIVATE_ERROR'); return page(employees, query.page); }
+    if (path === '/repair-orders') return page(orders.filter(ro => ro.repairOrderStatus.id === query.repairOrderStatusId), query.page);
+    if (path === '/jobs') { assert.equal(query.authorized, true); return page(jobsByRO[query.repairOrderId] || [], query.page); }
+    throw new Error('Unexpected path');
   } };
 }
 test('completed uses job date not RO posted date or labor complete', () => {
@@ -44,13 +45,33 @@ test('eligibility flags are strict for both modes; no clocked hours or job.compl
 });
 test('current board includes statuses 1–3 only, no historical filters', async () => {
   const orders = [1,2,3,4,5,6,7].map(id => ({ id, repairOrderStatus: { id } }));
-  const source = api(orders, orders.map(ro => job(ro.id, { repairOrderId: ro.id, completedDate: 'ignored' })));
+  const jobsByRO = Object.fromEntries(orders.map(ro => [ro.id, [job(ro.id, { repairOrderId: ro.id, completedDate: 'ignored' })]]));
+  const source = api(orders, jobsByRO);
   const data = await technicianData(source, 'current');
   assert.equal(metric(build(data.records, directory, 'current'), 'jobCount'), 3);
-  assert.deepEqual(source.calls.filter(c => c.path === '/jobs').map(c => c.repairOrderStatusId), [[1,2,3]]);
+  assert.deepEqual(source.calls.filter(c => c.path === '/repair-orders').map(c => c.repairOrderStatusId).sort(), [1,2,3]);
+  assert.equal(source.calls.filter(c => c.path === '/jobs').length, 3);
   assert.ok(source.calls.every(c => !('postedDateStart' in c) && !('authorizedDateStart' in c)));
   assert.equal(data.records.length, 3);
-  assert.ok(source.calls.every(c => c.path !== '/repair-orders' && !('repairOrderId' in c) && !('authorized' in c) && !('selected' in c) && !('archived' in c)));
+});
+test('current board uses repair-orders per status and jobs per repair order, never the jobs status-array query', async () => {
+  const { createClient } = require('../lib/tekmetric');
+  const urls = [];
+  const roPage = { content: [{ id: 1, repairOrderStatus: { id: 1 }, shopId: 1 }], number: 0, size: 100, totalElements: 1, totalPages: 1 };
+  const emptyPage = page([]);
+  const client = createClient({ TEKMETRIC_BASE_URL: 'https://sandbox.tekmetric.com', TEKMETRIC_CLIENT_ID: 'synthetic', TEKMETRIC_CLIENT_SECRET: 'synthetic', TEKMETRIC_SHOP_ID: '1' }, async url => {
+    urls.push(url);
+    if (url.endsWith('/token')) return { ok: true, json: async () => ({ access_token: 'synthetic' }) };
+    if (url.includes('/repair-orders')) {
+      const status = new URL(url).searchParams.get('repairOrderStatusId');
+      return { ok: true, json: async () => status === '1' ? roPage : emptyPage };
+    }
+    return { ok: true, json: async () => emptyPage };
+  });
+  await technicianData(client, 'current');
+  assert.ok(!urls.some(url => url.includes('/jobs') && url.includes('repairOrderStatusId')));
+  assert.equal(urls.filter(url => url.includes('/repair-orders?') && /repairOrderStatusId=[123]$|repairOrderStatusId=[123]&/.test(url)).length, 3);
+  assert.ok(urls.some(url => url.includes('/jobs?') && url.includes('repairOrderId=1')));
 });
 test('current incomplete hours and active jobs exclude complete lines, count once', () => {
   const result = build([job(1, { labor: [line(1, 11, 2), line(2, 11, 3, true), line(3, 11, 0)] }), job(2, { labor: [line(4, 11, 4, true)] }), job(3, { labor: [] })], directory, 'current');
@@ -94,16 +115,35 @@ test('empty datasets are verified zero and completed zero-labor jobs still count
   assert.equal(metric(build([job(1,{labor:[]})],directory,'completed',day),'jobCount'),1);
 });
 test('employee failure preserves valid aggregate report with unavailable names', async () => {
-  const source=api([{id:1,repairOrderStatus:{id:1}}], [job()], [], true);const data=await technicianData(source,'current');
+  const source=api([{id:1,repairOrderStatus:{id:1}}], {1:[job()]}, [], true);const data=await technicianData(source,'current');
   const result=build(data.records,data.directory,'completed',day);
   assert.equal(result.directoryStatus,'unavailable');assert.equal(result.rows[0].name,'Technician name unavailable');assert.equal(metric(result,'hours'),1.5);
 });
-test('current population paginates fully and limits never produce partial metrics', async () => {
-  const jobs=Array.from({length:101},(_,i)=>job(i));
-  const source=()=>api([{id:1,repairOrderStatus:{id:1}}],jobs);
+test('per-repair-order job population paginates fully; limits never produce partial metrics', async () => {
+  const jobs=Array.from({length:101},(_,i)=>job(i,{repairOrderId:1}));
+  const source=()=>api([{id:1,repairOrderStatus:{id:1}}],{1:jobs});
   assert.equal((await technicianData(source(),'current')).records.length,101);
-  await assert.rejects(technicianData(source(),'current',{...LIMITS,pages:1}),/statuses 1,2,3: retrieval exceeded 1 pages/);
+  await assert.rejects(technicianData(source(),'current',{...LIMITS,pages:1}),/statuses 1,2,3: retrieval exceeded 1 pages of 100 jobs/);
   await assert.rejects(technicianData(source(),'current',{...LIMITS,requests:1}),/request report budget/);
+});
+test('repair-order population itself is fully paginated; a truncated RO page is never accepted', async () => {
+  const orders=Array.from({length:101},(_,i)=>({id:i,repairOrderStatus:{id:1}}));
+  const jobsByRO=Object.fromEntries(orders.map(ro=>[ro.id,[]]));
+  const source=api(orders,jobsByRO);
+  await technicianData(source,'current');
+  assert.equal(source.calls.filter(c=>c.path==='/jobs').length,101);
+  await assert.rejects(technicianData(api(orders,jobsByRO),'current',{...LIMITS,pages:1}),/statuses 1,2,3: retrieval exceeded 1 pages of 100 repair orders/);
+});
+test('a repair order is fetched once even if it appears in more than one status page; jobs are not double-fetched',async()=>{
+  const client={shop:'1',calls:[],async get(path,query){
+    this.calls.push({path,...query});
+    if(path==='/employees')return page([]);
+    if(path==='/repair-orders')return page(query.repairOrderStatusId===1?[{id:1,repairOrderStatus:{id:1}}]:[],query.page);
+    return page([job(1,{repairOrderId:1})],query.page);
+  }};
+  const data=await technicianData(client,'current');
+  assert.equal(data.records.length,1);
+  assert.equal(client.calls.filter(c=>c.path==='/jobs').length,1);
 });
 test('completed history never attempts upstream requests',async()=>{
   let calls=0;
@@ -180,17 +220,8 @@ test('completed endpoint needs no configuration or network and board remains ind
   await handler({method:'GET',query:{report:'completed',date:day}},res);
   assert.equal(body.technicianReport.status,'unavailable');
   assert.match(body.technicianReport.reason,/does not provide a verified job completed-date filter/);
-  const data=await technicianData(api([{id:1,repairOrderStatus:{id:1}}],[job()]),'current');
+  const data=await technicianData(api([{id:1,repairOrderStatus:{id:1}}],{1:[job()]}),'current');
   assert.equal(metric(build(data.records,directory,'current'),'jobCount'),1);
-});
-test('current statuses use shared client array encoding in one population',async()=>{
-  const {createClient}=require('../lib/tekmetric');const urls=[];
-  const client=createClient({TEKMETRIC_BASE_URL:'https://sandbox.tekmetric.com',TEKMETRIC_CLIENT_ID:'synthetic',TEKMETRIC_CLIENT_SECRET:'synthetic',TEKMETRIC_SHOP_ID:'1'},async url=>{
-    urls.push(url);return {ok:true,json:async()=>url.endsWith('/token')?{access_token:'synthetic'}:page([])};
-  });
-  await technicianData(client,'current');
-  const jobs=urls.filter(url=>url.includes('/jobs?'));assert.equal(jobs.length,1);
-  assert.ok(jobs[0].includes('repairOrderStatusId=1%2C2%2C3'));
 });
 test('advisor uses complete supplied directory while technician history is unavailable',async()=>{
   const {advisorReport}=require('../lib/advisor-report');
