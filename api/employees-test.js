@@ -44,55 +44,89 @@ module.exports = async function handler(req, res) {
     }
 
     const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
 
-    const requestUrl =
-      `${baseUrl}/api/v1/employees` +
-      `?shop=${encodeURIComponent(shopId)}` +
-      `&page=0&size=100`;
+    let page = 0;
+    let totalPages = 1;
+    let allEmployees = [];
 
-    const employeeResponse = await fetch(requestUrl, {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-        Accept: "application/json",
-      },
-    });
+    while (page < totalPages && page < 20) {
+      const requestUrl =
+        `${baseUrl}/api/v1/employees` +
+        `?page=${page}&size=100`;
 
-    if (!employeeResponse.ok) {
-      return res.status(employeeResponse.status).json({
-        connected: false,
-        error: "Unable to retrieve employees",
-        status: employeeResponse.status,
+      const employeeResponse = await fetch(requestUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
       });
+
+      if (!employeeResponse.ok) {
+        return res.status(employeeResponse.status).json({
+          connected: false,
+          error: "Unable to retrieve employees",
+          status: employeeResponse.status,
+        });
+      }
+
+      const data = await employeeResponse.json();
+
+      const pageEmployees = Array.isArray(data)
+        ? data
+        : data.content ||
+          data.data ||
+          data.employees ||
+          [];
+
+      allEmployees = allEmployees.concat(pageEmployees);
+
+      if (Array.isArray(data)) {
+        totalPages = 1;
+      } else if (typeof data.totalPages === "number") {
+        totalPages = data.totalPages;
+      } else if (typeof data.totalElements === "number") {
+        totalPages = Math.ceil(data.totalElements / 100);
+      } else {
+        totalPages = 1;
+      }
+
+      page += 1;
     }
 
-    const data = await employeeResponse.json();
+    const shopEmployees = allEmployees.filter((employee) => {
+      if (String(employee.shopId || "") === String(shopId)) {
+        return true;
+      }
 
-    const employees = Array.isArray(data)
-      ? data
-      : data.content ||
-        data.data ||
-        data.employees ||
-        [];
+      if (!Array.isArray(employee.shops)) {
+        return false;
+      }
 
-    const safeEmployees = employees.map((employee) => ({
+      return employee.shops.some((shop) => {
+        const employeeShopId =
+          typeof shop === "object"
+            ? shop.id ?? shop.shopId
+            : shop;
+
+        return String(employeeShopId) === String(shopId);
+      });
+    });
+
+    const safeEmployees = shopEmployees.map((employee) => ({
       id: employee.id,
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      name: employee.name,
-      type: employee.type,
-      active: employee.active,
+      firstName: employee.firstName || "",
+      lastName: employee.lastName || "",
+      role: employee.employeeRole || null,
+      payType: employee.employeePayType || null,
+      disabled: Boolean(employee.disabled),
     }));
 
     return res.status(200).json({
       connected: true,
       shopId: Number(shopId),
-      employeesReturned: employees.length,
-      totalEmployees:
-        data.totalElements ?? data.total ?? employees.length,
-      availableFields:
-        employees.length > 0
-          ? Object.keys(employees[0])
-          : [],
+      allSandboxEmployeesChecked: allEmployees.length,
+      shopEmployeesReturned: safeEmployees.length,
       employees: safeEmployees,
     });
   } catch (error) {
