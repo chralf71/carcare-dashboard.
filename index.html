@@ -1,10 +1,369 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
   <title>CarCare Dashboard</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f3f5f7;
+      color: #1f2933;
+    }
+
+    header {
+      background: #17212b;
+      color: white;
+      padding: 22px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 25px;
+    }
+
+    header p {
+      margin: 5px 0 0;
+      color: #c7d0d9;
+      font-size: 14px;
+    }
+
+    .environment {
+      background: #f59e0b;
+      color: #111827;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    main {
+      width: min(1200px, calc(100% - 40px));
+      margin: 32px auto;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    #last-updated {
+      color: #6b7280;
+      font-size: 13px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #dfe3e8;
+      border-radius: 12px;
+      padding: 22px;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+    }
+
+    .card-label {
+      color: #66717c;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 14px;
+    }
+
+    .card-value {
+      font-size: 38px;
+      font-weight: bold;
+      line-height: 1;
+    }
+
+    .estimates {
+      border-top: 5px solid #64748b;
+    }
+
+    .wip {
+      border-top: 5px solid #f59e0b;
+    }
+
+    .completed {
+      border-top: 5px solid #16a34a;
+    }
+
+    .posted {
+      border-top: 5px solid #2563eb;
+    }
+
+    .connection-panel {
+      background: white;
+      border: 1px solid #dfe3e8;
+      border-radius: 12px;
+      padding: 18px 22px;
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: bold;
+    }
+
+    .status-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #9ca3af;
+    }
+
+    .status-dot.connected {
+      background: #16a34a;
+    }
+
+    .status-dot.error {
+      background: #dc2626;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      background: #17212b;
+      color: white;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #263544;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    #error-message {
+      display: none;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #991b1b;
+    }
+
+    @media (max-width: 850px) {
+      .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 520px) {
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .connection-panel {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
 </head>
+
 <body>
-  <h1>CarCare Dashboard - Test Page</h1>
-  <p>If you can see this on the internet, the pipeline works.</p>
+  <header>
+    <div>
+      <h1>CarCare Shop Dashboard</h1>
+      <p>Repair-order workflow overview</p>
+    </div>
+
+    <div class="environment">
+      Tekmetric Sandbox
+    </div>
+  </header>
+
+  <main>
+    <div class="section-heading">
+      <h2>Repair Orders</h2>
+      <div id="last-updated">Loading dashboard…</div>
+    </div>
+
+    <section class="cards">
+      <article class="card estimates">
+        <div class="card-label">Estimates</div>
+        <div class="card-value" id="estimates">—</div>
+      </article>
+
+      <article class="card wip">
+        <div class="card-label">Work in Progress</div>
+        <div class="card-value" id="work-in-progress">—</div>
+      </article>
+
+      <article class="card completed">
+        <div class="card-label">Completed</div>
+        <div class="card-value" id="completed">—</div>
+      </article>
+
+      <article class="card posted">
+        <div class="card-label">Posted</div>
+        <div class="card-value" id="posted">—</div>
+      </article>
+    </section>
+
+    <section class="connection-panel">
+      <div class="connection-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="connection-text">Connecting to Tekmetric…</span>
+      </div>
+
+      <button id="refresh-button" type="button">
+        Refresh
+      </button>
+    </section>
+
+    <div id="error-message"></div>
+  </main>
+
+  <script>
+    const estimatesElement =
+      document.getElementById("estimates");
+
+    const workInProgressElement =
+      document.getElementById("work-in-progress");
+
+    const completedElement =
+      document.getElementById("completed");
+
+    const postedElement =
+      document.getElementById("posted");
+
+    const lastUpdatedElement =
+      document.getElementById("last-updated");
+
+    const connectionTextElement =
+      document.getElementById("connection-text");
+
+    const statusDotElement =
+      document.getElementById("status-dot");
+
+    const errorMessageElement =
+      document.getElementById("error-message");
+
+    const refreshButton =
+      document.getElementById("refresh-button");
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    async function loadDashboard() {
+      refreshButton.disabled = true;
+      refreshButton.textContent = "Refreshing…";
+
+      errorMessageElement.style.display = "none";
+      statusDotElement.className = "status-dot";
+      connectionTextElement.textContent =
+        "Connecting to Tekmetric…";
+
+      try {
+        const response = await fetch(
+          "/api/dashboard-summary",
+          {
+            cache: "no-store",
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.connected) {
+          throw new Error(
+            data.error || "Unable to load dashboard"
+          );
+        }
+
+        estimatesElement.textContent =
+          formatNumber(data.repairOrders.estimates);
+
+        workInProgressElement.textContent =
+          formatNumber(data.repairOrders.workInProgress);
+
+        completedElement.textContent =
+          formatNumber(data.repairOrders.completed);
+
+        postedElement.textContent =
+          formatNumber(data.repairOrders.posted);
+
+        const updated = new Date(data.updatedAt);
+
+        lastUpdatedElement.textContent =
+          `Last updated ${updated.toLocaleString()}`;
+
+        statusDotElement.className =
+          "status-dot connected";
+
+        connectionTextElement.textContent =
+          "Connected to Tekmetric Sandbox";
+      } catch (error) {
+        statusDotElement.className =
+          "status-dot error";
+
+        connectionTextElement.textContent =
+          "Tekmetric connection error";
+
+        errorMessageElement.textContent =
+          error.message;
+
+        errorMessageElement.style.display = "block";
+      } finally {
+        refreshButton.disabled = false;
+        refreshButton.textContent = "Refresh";
+      }
+    }
+
+    refreshButton.addEventListener(
+      "click",
+      loadDashboard
+    );
+
+    loadDashboard();
+
+    setInterval(loadDashboard, 120000);
+  </script>
 </body>
 </html>
