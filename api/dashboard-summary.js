@@ -1,3 +1,4 @@
+const { employeeDirectory } = require('../lib/employees');
 const { createClient } = require('../lib/tekmetric');
 const { chicagoDate, validateDate, TIMEZONE } = require('../lib/shop-date');
 const { dailyDataset, emptyMetrics } = require('../lib/daily-financials');
@@ -10,8 +11,12 @@ module.exports = async function handler(req, res) {
   catch { return res.status(400).json({ error: 'Use a valid YYYY-MM-DD reporting date', metrics: emptyMetrics(), advisorReport: unavailableReport() }); }
   try {
     const client = createClient();
-    const dataset = await dailyDataset(client, date);
-    const advisors = await advisorReport(client, dataset);
+    // Reserve an independent request deadline for advisor identities before financial work.
+    const directoryPromise = employeeDirectory(client).catch(() => null);
+    const [directory, dataset] = await Promise.all([
+      directoryPromise, dailyDataset(createClient(), date),
+    ]);
+    const advisors = await advisorReport(client, dataset, directory);
     const metrics = dataset.metrics;
     return res.status(200).json({ date, timezone: TIMEZONE, metrics, advisorReport: advisors, updatedAt: new Date().toISOString() });
   } catch {

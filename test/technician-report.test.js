@@ -16,7 +16,7 @@ function api(orders = [], jobs = [], employees = [], failEmployees = false) {
     calls.push({ path, ...query });
     assert.equal(query.shop, '1');
     if (path === '/employees' && failEmployees) throw new Error('SYNTHETIC_PRIVATE_ERROR');
-    const rows = path === '/employees' ? employees : path === '/repair-orders' ? orders.filter(ro => ro.repairOrderStatus.id === query.repairOrderStatusId) : query.repairOrderStatusId !== undefined ? jobs.filter(j => orders.some(ro => ro.id === j.repairOrderId && ro.repairOrderStatus.id === query.repairOrderStatusId)) : query.repairOrderId === undefined ? jobs : jobs.filter(j => String(j.repairOrderId) === query.repairOrderId);
+    const rows = path === '/employees' ? employees : path === '/repair-orders' ? orders.filter(ro => [query.repairOrderStatusId].flat().includes(ro.repairOrderStatus.id)) : query.repairOrderStatusId !== undefined ? jobs.filter(j => orders.some(ro => ro.id === j.repairOrderId && [query.repairOrderStatusId].flat().includes(ro.repairOrderStatus.id))) : query.repairOrderId === undefined ? jobs : jobs.filter(j => String(j.repairOrderId) === query.repairOrderId);
     return page(rows, query.page);
   } };
 }
@@ -47,7 +47,7 @@ test('current board includes statuses 1–3 only, no historical filters', async 
   const source = api(orders, orders.map(ro => job(ro.id, { repairOrderId: ro.id, completedDate: 'ignored' })));
   const data = await technicianData(source, 'current');
   assert.equal(metric(build(data.records, directory, 'current'), 'jobCount'), 3);
-  assert.deepEqual(source.calls.filter(c => c.path === '/jobs').map(c => c.repairOrderStatusId), [1,2,3]);
+  assert.deepEqual(source.calls.filter(c => c.path === '/jobs').map(c => c.repairOrderStatusId), [[1,2,3]]);
   assert.ok(source.calls.every(c => !('postedDateStart' in c) && !('authorizedDateStart' in c)));
   assert.equal(data.records.length, 3);
   assert.ok(source.calls.every(c => c.path !== '/repair-orders' && !('repairOrderId' in c) && !('authorized' in c) && !('selected' in c) && !('archived' in c)));
@@ -94,20 +94,21 @@ test('empty datasets are verified zero and completed zero-labor jobs still count
   assert.equal(metric(build([job(1,{labor:[]})],directory,'completed',day),'jobCount'),1);
 });
 test('employee failure preserves valid aggregate report with unavailable names', async () => {
-  const source=api([], [job()], [], true);const data=await technicianData(source,'completed');
+  const source=api([{id:1,repairOrderStatus:{id:1}}], [job()], [], true);const data=await technicianData(source,'current');
   const result=build(data.records,data.directory,'completed',day);
   assert.equal(result.directoryStatus,'unavailable');assert.equal(result.rows[0].name,'Technician name unavailable');assert.equal(metric(result,'hours'),1.5);
 });
-test('complete job pagination and limit failures never produce partial metrics', async () => {
-  const jobs=Array.from({length:101},(_,i)=>job(i));const source=api([],jobs);
-  assert.equal((await technicianData(source,'completed')).records.length,101);
-  await assert.rejects(technicianData(api([],jobs),'completed',{...LIMITS,pages:1}));
-  await assert.rejects(technicianData(api([],jobs),'completed',{...LIMITS,requests:1}));
-  await assert.rejects(technicianData(api([{id:1,repairOrderStatus:{id:1}}],jobs),'current',{...LIMITS,pages:1}), /Current Tech Board status 1: retrieval exceeded 1 pages/);
+test('current population paginates fully and limits never produce partial metrics', async () => {
+  const jobs=Array.from({length:101},(_,i)=>job(i));
+  const source=()=>api([{id:1,repairOrderStatus:{id:1}}],jobs);
+  assert.equal((await technicianData(source(),'current')).records.length,101);
+  await assert.rejects(technicianData(source(),'current',{...LIMITS,pages:1}),/statuses 1,2,3: retrieval exceeded 1 pages/);
+  await assert.rejects(technicianData(source(),'current',{...LIMITS,requests:1}),/request report budget/);
 });
-test('historical job request scans shop jobs independent of RO statuses or dates',async()=>{
-  const source=api([], [job()]);await technicianData(source,'completed');
-  assert.deepEqual(source.calls[0],{path:'/jobs',shop:'1',page:0,size:100});
+test('completed history never attempts upstream requests',async()=>{
+  let calls=0;
+  await assert.rejects(technicianData({get(){calls++;}},'completed'),/scanning complete shop history is not safe/);
+  assert.equal(calls,0);
 });
 test('invalid labor fields and job responses never fabricate zero',()=>{
   for(const labor of [null,[{id:1,hours:'1',complete:false}],[{hours:1,complete:false}],[line(1,11,-1)]]) assert.throws(()=>build([job(1,{labor})],directory,'current'));
@@ -148,29 +149,12 @@ test('endpoint current ignores historical date and sanitizes failure',async()=>{
     let code,body;const res={setHeader(){},status(value){code=value;return this;},json(value){body=value;}};
     await handler({method:'GET',query:{report:'current',date:'not-a-date'}},res);assert.equal(code,200);assert.equal(body.historical,false);assert.ok(!('date'in body));
     global.fetch=async()=>{throw new Error('SYNTHETIC_PRIVATE');};
-    await handler({method:'GET',query:{report:'completed',date:day}},res);assert.equal(code,503);assert.equal(body.technicianReport.status,'unavailable');assert.ok(!JSON.stringify(body).includes('SYNTHETIC_PRIVATE'));
+    await handler({method:'GET',query:{report:'current'}},res);assert.equal(code,503);assert.equal(body.technicianReport.status,'unavailable');assert.ok(!JSON.stringify(body).includes('SYNTHETIC_PRIVATE'));
   } finally {global.fetch=oldFetch;for(const [key,value]of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
-});
-test('history truncation and board truncation are independent, with precise reasons', async () => {
-  const many = Array.from({length:101}, (_, i) => job(i));
-  for (const failing of ['completed', 'current']) {
-    const client = {shop:'1', async get(path, query) {
-      if (path === '/employees') return page([]);
-      const mode = query.repairOrderStatusId === undefined ? 'completed' : 'current';
-      return page(mode === failing ? many : [job(1, {technicianId:null, labor:[line(1,null)]})], query.page);
-    }};
-    const [history, board] = await Promise.allSettled(['completed','current'].map(mode => technicianData(client,mode,{...LIMITS,pages:1})));
-    const failed = failing === 'completed' ? history : board, passed = failing === 'completed' ? board : history;
-    assert.equal(failed.status,'rejected'); assert.equal(passed.status,'fulfilled');
-    assert.match(failed.reason.reason, /retrieval exceeded 1 pages of 100 jobs; additional pages remain/);
-    if(failing === 'completed') assert.match(failed.reason.reason,/No verified completedDate filter/);
-    const report=build(passed.value.records,passed.value.directory,failing === 'completed'?'current':'completed',day);
-    assert.equal(report.rows[0].key,'unassigned');assert.equal(metric(report,'jobCount'),1);assert.equal(metric(report,'hours'),1.5);
-  }
 });
 test('malformed pagination is not reported as a confirmed limit failure',async()=>{
   await assert.rejects(technicianData({shop:'1',get:async()=>({private:'SYNTHETIC_PRIVATE'})},'current'),error=>{
-    assert.match(error.reason,/Current Tech Board status [123]/);assert.match(error.reason,/not a confirmed retrieval-limit failure/);
+    assert.match(error.reason,/Current Tech Board statuses 1,2,3/);assert.match(error.reason,/No partial totals/);
     assert.ok(!error.reason.includes('SYNTHETIC_PRIVATE'));return true;
   });
 });
@@ -188,4 +172,31 @@ test('frontend renders sanitized unavailable response independently of successfu
 test('September 9 completed job with null assignments is Unassigned, not unavailable',()=>{
   const report=build([job(1,{completedDate:'2026-09-09T15:00:00Z',technicianId:null,labor:[line(1,null)]})],directory,'completed','2026-09-09');
   assert.equal(report.rows[0].key,'unassigned');assert.equal(metric(report,'hours'),1.5);assert.equal(metric(report,'jobCount'),1);
+});
+
+test('completed endpoint needs no configuration or network and board remains independent',async()=>{
+  const handler=require('../api/technician-summary');
+  let body;const res={setHeader(){},status(code){assert.equal(code,200);return this;},json(value){body=value;}};
+  await handler({method:'GET',query:{report:'completed',date:day}},res);
+  assert.equal(body.technicianReport.status,'unavailable');
+  assert.match(body.technicianReport.reason,/does not provide a verified job completed-date filter/);
+  const data=await technicianData(api([{id:1,repairOrderStatus:{id:1}}],[job()]),'current');
+  assert.equal(metric(build(data.records,directory,'current'),'jobCount'),1);
+});
+test('current statuses use shared client array encoding in one population',async()=>{
+  const {createClient}=require('../lib/tekmetric');const urls=[];
+  const client=createClient({TEKMETRIC_BASE_URL:'https://sandbox.tekmetric.com',TEKMETRIC_CLIENT_ID:'synthetic',TEKMETRIC_CLIENT_SECRET:'synthetic',TEKMETRIC_SHOP_ID:'1'},async url=>{
+    urls.push(url);return {ok:true,json:async()=>url.endsWith('/token')?{access_token:'synthetic'}:page([])};
+  });
+  await technicianData(client,'current');
+  const jobs=urls.filter(url=>url.includes('/jobs?'));assert.equal(jobs.length,1);
+  assert.ok(jobs[0].includes('repairOrderStatusId=1%2C2%2C3'));
+});
+test('advisor uses complete supplied directory while technician history is unavailable',async()=>{
+  const {advisorReport}=require('../lib/advisor-report');
+  const {sales,emptyMetrics}=require('../lib/daily-financials');
+  const orders=[{id:'1',cents:[100,0,0,0,0],assignment:{status:'assigned',serviceWriterId:'11'}}];
+  await assert.rejects(technicianData({},'completed'));
+  const report=await advisorReport({get(){assert.fail('directory must be reused');}}, {orders,jobsByOrder:[{repairOrderId:'1',jobs:[]}],metrics:{...emptyMetrics(),...sales(orders)}},directory);
+  assert.equal(report.directoryStatus,'complete');assert.equal(report.rows[0].name,'Synthetic One');
 });

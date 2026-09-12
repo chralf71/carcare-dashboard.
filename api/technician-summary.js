@@ -1,6 +1,6 @@
 const { createClient } = require('../lib/tekmetric');
 const { chicagoDate, validateDate, TIMEZONE } = require('../lib/shop-date');
-const { technicianData, RetrievalFailure } = require('../lib/technician-data');
+const { technicianData, RetrievalFailure, HISTORY_REASON } = require('../lib/technician-data');
 const { buildTechnicianReport, unavailableReport } = require('../lib/technician-report');
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -11,6 +11,7 @@ module.exports = async function handler(req, res) {
   try { if (mode === 'completed') date = validateDate(req.query?.date === undefined ? chicagoDate() : req.query.date); }
   catch { return res.status(400).json({ error: 'Use a valid YYYY-MM-DD reporting date', technicianReport: unavailableReport() }); }
   const identity = mode === 'completed' ? { date } : { historical: false };
+  if (mode === 'completed') return res.status(200).json({ report: mode, timezone: TIMEZONE, ...identity, technicianReport: unavailableReport(HISTORY_REASON) });
   try {
     const data = await technicianData(createClient(), mode);
     const technicianReport = buildTechnicianReport(data.records, data.directory, mode, date);
