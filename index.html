@@ -98,7 +98,8 @@
     }
 
     .card-value {
-      font-size: 38px;
+      font-size: clamp(20px, 2.6vw, 32px);
+      overflow-wrap: anywhere;
       font-weight: bold;
       line-height: 1;
     }
@@ -208,162 +209,25 @@
 
 <body>
   <header>
-    <div>
-      <h1>CarCare Shop Dashboard</h1>
-      <p>Repair-order workflow overview</p>
-    </div>
-
-    <div class="environment">
-      Tekmetric Sandbox
-    </div>
+    <div><h1>CarCare Shop Dashboard</h1><p>Daily financial reporting · America/Chicago</p></div>
   </header>
-
   <main>
     <div class="section-heading">
-      <h2>Repair Orders</h2>
+      <div><h2>Daily report</h2><p><label for="reporting-date">Reporting date</label> <input type="date" id="reporting-date" min="1900-01-01" max="9998-12-31" required></p></div>
       <div id="last-updated">Loading dashboard…</div>
     </div>
-
-    <section class="cards">
-      <article class="card estimates">
-        <div class="card-label">Estimates</div>
-        <div class="card-value" id="estimates">—</div>
-      </article>
-
-      <article class="card wip">
-        <div class="card-label">Work in Progress</div>
-        <div class="card-value" id="work-in-progress">—</div>
-      </article>
-
-      <article class="card completed">
-        <div class="card-label">Completed</div>
-        <div class="card-value" id="completed">—</div>
-      </article>
-
-      <article class="card posted">
-        <div class="card-label">Posted</div>
-        <div class="card-value" id="posted">—</div>
-      </article>
+    <section class="cards" aria-label="Daily metrics">
+      <article class="card posted"><div class="card-label">Daily sales</div><div class="card-value" id="daily-sales">Unavailable</div><p>After discounts · before taxes</p></article>
+      <article class="card estimates"><div class="card-label">Repair orders</div><div class="card-value" id="ro-count">Unavailable</div><p>Posted / Accounts Receivable</p></article>
+      <article class="card completed"><div class="card-label">Average RO</div><div class="card-value" id="average-ro">Unavailable</div></article>
+      <article class="card wip"><div class="card-label">Hours sold</div><div class="card-value" id="hours-sold">Unavailable</div><p>Approved labor · excludes archived jobs</p></article>
+      <article class="card"><div class="card-label">Gross profit · dollars and percentage</div><div class="card-value">Unavailable</div><p>Cost data not available through the verified API</p></article>
     </section>
-
-    <section class="connection-panel">
-      <div class="connection-status">
-        <span class="status-dot" id="status-dot"></span>
-        <span id="connection-text">Connecting to Tekmetric…</span>
-      </div>
-
-      <button id="refresh-button" type="button">
-        Refresh
-      </button>
+    <section class="connection-panel" aria-live="polite">
+      <div id="connection-text">Loading daily report…</div>
+      <button id="refresh-button" type="button">Refresh</button>
     </section>
-
-    <div id="error-message"></div>
   </main>
-
-  <script>
-    const estimatesElement =
-      document.getElementById("estimates");
-
-    const workInProgressElement =
-      document.getElementById("work-in-progress");
-
-    const completedElement =
-      document.getElementById("completed");
-
-    const postedElement =
-      document.getElementById("posted");
-
-    const lastUpdatedElement =
-      document.getElementById("last-updated");
-
-    const connectionTextElement =
-      document.getElementById("connection-text");
-
-    const statusDotElement =
-      document.getElementById("status-dot");
-
-    const errorMessageElement =
-      document.getElementById("error-message");
-
-    const refreshButton =
-      document.getElementById("refresh-button");
-
-    function formatNumber(value) {
-      return Number(value || 0).toLocaleString();
-    }
-
-    async function loadDashboard() {
-      refreshButton.disabled = true;
-      refreshButton.textContent = "Refreshing…";
-
-      errorMessageElement.style.display = "none";
-      statusDotElement.className = "status-dot";
-      connectionTextElement.textContent =
-        "Connecting to Tekmetric…";
-
-      try {
-        const response = await fetch(
-          "/api/dashboard-summary",
-          {
-            cache: "no-store",
-          }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok || !data.connected) {
-          throw new Error(
-            data.error || "Unable to load dashboard"
-          );
-        }
-
-        estimatesElement.textContent =
-          formatNumber(data.repairOrders.estimates);
-
-        workInProgressElement.textContent =
-          formatNumber(data.repairOrders.workInProgress);
-
-        completedElement.textContent =
-          formatNumber(data.repairOrders.completed);
-
-        postedElement.textContent =
-          formatNumber(data.repairOrders.posted);
-
-        const updated = new Date(data.updatedAt);
-
-        lastUpdatedElement.textContent =
-          `Last updated ${updated.toLocaleString()}`;
-
-        statusDotElement.className =
-          "status-dot connected";
-
-        connectionTextElement.textContent =
-          "Connected to Tekmetric Sandbox";
-      } catch (error) {
-        statusDotElement.className =
-          "status-dot error";
-
-        connectionTextElement.textContent =
-          "Tekmetric connection error";
-
-        errorMessageElement.textContent =
-          error.message;
-
-        errorMessageElement.style.display = "block";
-      } finally {
-        refreshButton.disabled = false;
-        refreshButton.textContent = "Refresh";
-      }
-    }
-
-    refreshButton.addEventListener(
-      "click",
-      loadDashboard
-    );
-
-    loadDashboard();
-
-    setInterval(loadDashboard, 120000);
-  </script>
+  <script src="/public/dashboard.js" defer></script>
 </body>
 </html>
