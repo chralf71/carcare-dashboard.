@@ -45,15 +45,17 @@ module.exports = async function handler(req, res) {
 
     const tokenData = await tokenResponse.json();
 
-    const employeeResponse = await fetch(
-      `${baseUrl}/api/v1/employees?page=0&size=100`,
-      {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-          Accept: "application/json",
-        },
-      }
-    );
+    const requestUrl =
+      `${baseUrl}/api/v1/employees` +
+      `?shop=${encodeURIComponent(shopId)}` +
+      `&page=0&size=100`;
+
+    const employeeResponse = await fetch(requestUrl, {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        Accept: "application/json",
+      },
+    });
 
     if (!employeeResponse.ok) {
       return res.status(employeeResponse.status).json({
@@ -72,22 +74,7 @@ module.exports = async function handler(req, res) {
         data.employees ||
         [];
 
-    const shopEmployees = employees.filter((employee) => {
-      if (!Array.isArray(employee.shops)) {
-        return false;
-      }
-
-      return employee.shops.some((shop) => {
-        const employeeShopId =
-          typeof shop === "object"
-            ? shop.id ?? shop.shopId
-            : shop;
-
-        return String(employeeShopId) === String(shopId);
-      });
-    });
-
-    const safeEmployees = shopEmployees.map((employee) => ({
+    const safeEmployees = employees.map((employee) => ({
       id: employee.id,
       firstName: employee.firstName || "",
       lastName: employee.lastName || "",
@@ -98,8 +85,9 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       connected: true,
       shopId: Number(shopId),
-      employeesChecked: employees.length,
-      shopEmployeesReturned: safeEmployees.length,
+      employeesReturned: safeEmployees.length,
+      totalEmployees:
+        data.totalElements ?? data.total ?? safeEmployees.length,
       employees: safeEmployees,
     });
   } catch (error) {
