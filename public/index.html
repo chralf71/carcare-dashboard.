@@ -242,11 +242,28 @@
       <p class="advisor-note">All observed advisors · sales after discounts and before taxes. Gross profit: Cost data not available through the verified API.</p>
       <p class="advisor-note" id="advisor-reconciliation"></p>
     </section>
+    <section class="advisor-section" aria-labelledby="technician-completed-heading">
+      <h2 id="technician-completed-heading">Completed on selected date</h2>
+      <p id="technician-completed-status" role="status">Loading technician report…</p>
+      <div class="advisor-table-scroll" tabindex="0" role="region" aria-label="Completed technician jobs">
+        <table class="advisor-table"><thead><tr><th scope="col">Technician</th><th scope="col">Hours on jobs completed</th><th scope="col">Completed jobs</th></tr></thead><tbody id="technician-completed-rows"></tbody></table>
+      </div>
+      <p class="advisor-note">Based on job completion date, not labor-line completion time or RO posted date. Hours and job counts may belong to different technicians.</p>
+    </section>
+    <section class="advisor-section" aria-labelledby="technician-current-heading">
+      <h2 id="technician-current-heading">Current Tech Board</h2>
+      <p id="technician-current-status" role="status">Loading current snapshot…</p>
+      <div class="advisor-table-scroll" tabindex="0" role="region" aria-label="Current technician workload">
+        <table class="advisor-table"><thead><tr><th scope="col">Technician</th><th scope="col">Incomplete assigned hours</th><th scope="col">Active jobs</th></tr></thead><tbody id="technician-current-rows"></tbody></table>
+      </div>
+      <p class="advisor-note">Current snapshot for parent RO statuses 1–3; unaffected by historical date selection. Includes Unassigned and invalid-assignment buckets when applicable.</p>
+    </section>
     <section class="connection-panel" aria-live="polite">
       <div id="connection-text">Loading daily report…</div>
       <button id="refresh-button" type="button">Refresh</button>
     </section>
   </main>
   <script src="/dashboard.js" defer></script>
+  <script src="/technicians.js" defer></script>
 </body>
 </html>
