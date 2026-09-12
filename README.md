@@ -72,3 +72,25 @@ Reconciliation checks sum sales cents and RO counts with integer arithmetic and 
 The responsive advisor table shares the existing refresh generation guard, clears stale rows, renders names with `textContent`, and shows reconciliation status. The output directory remains `public`; root `api`, `lib`, and `vercel.json` retain their deployment roles. Diagnostics remain disabled by default; do not enable them for advisor discovery.
 
 Additional synthetic tests cover status allocation, discounts, repeated RO/job/labor IDs, conflicting ownership and advisor assignments, missing/unknown/invalid IDs, employee pagination/failure, duplicate names, disabled employees, zero-order days, zero-value ROs, exact/tolerant reconciliation, privacy, and safe rendering. Before production, validate employee schemas and ID uniqueness in sandbox, and establish whether historical `serviceWriterId` reflects the advisor at posting or subsequent reassignment. No historical attribution rule is inferred.
+
+## Temporary Phase 3 sandbox schema probe
+
+**Remove `api/technician-schema-test.js` after schema validation.** This is not a technician dashboard or a complete shop report. `GET /api/technician-schema-test` works only when the parsed `TEKMETRIC_BASE_URL` hostname is exactly `sandbox.tekmetric.com`. Other or unparseable hosts return HTTP 403 before authentication. Existing HTTPS/origin validation still rejects insecure URLs, credentials in URLs, paths, and alternate ports. Non-GET requests on the sandbox return 405. Failures return only `{"error":"Schema sample unavailable"}` with HTTP 503. All responses set `Cache-Control: no-store`.
+
+Verified documentation supplied for this phase establishes job `technicianId` and `completedDate`, and labor `technicianId`, `hours`, and `complete`. No labor `completedDate` is documented. Observing a field does not establish its semantics or authorize using it for historical metrics.
+
+The probe reads one validated page of at most three parent ROs, then one page of at most three jobs per distinct parent. It inspects at most the first 30 labor entries per sampled job (maximum nine jobs and 270 labor lines). The sample is determined by upstream default ordering and is not representative of every status. It intentionally does not traverse all pages; `sampleOnly` is always true and `sampleTruncated` reports records/lines omitted by these limits. It reuses shared page-envelope validation (`readPage`), deduplication, ID validation, authentication, and concurrency controls. Conflicting duplicate associations or malformed required envelopes/records fail closed.
+
+Request limits: at most five upstream requests (one token, one RO page, up to three job pages), two concurrent job requests, four-second per-request timeout, and twelve-second shared upstream budget. No retries and no user-controlled sampling parameters. These are per-invocation caps, not a global rate limit. No other diagnostic endpoint is enabled or modified; this separate temporary probe does not require `ENABLE_DIAGNOSTICS`.
+
+Successful response keys are exactly:
+
+- `temporary`, `sampleOnly`, `sampleTruncated`: booleans.
+- `jobsInspected`, `laborLinesInspected`: deduplicated sample counts.
+- `jobTechnicianIdPresentCount`, `laborTechnicianIdPresentCount`.
+- `jobCompletedDatePresentCount`, `laborCompletedDatePresentCount`.
+- `jobCompleteFieldPresentCount`, `laborCompleteFieldPresentCount`.
+- `observedParentRoStatusIds`: unique sorted parent status IDs, restricted to integers 1–7.
+- `jobAssignmentTypesObserved`, `laborAssignmentTypesObserved`: objects containing only boolean `numeric`, `null`, and `malformed` flags.
+
+Presence means the object owns the field, including a null value. Missing fields do not set any assignment-type flag. Numeric assignment means a positive safe integer; strings and other present non-null values are classified as malformed for this probe, without returning their values. Parent statuses include the sampled parents even if they have no sampled jobs. No names, notes, customer/vehicle IDs, RO numbers, record/employee IDs, credentials, tokens, dates, hours, currency values, or complete records are returned. The explicit response allowlist is tested using synthetic prohibited values. Schema observation alone does not resolve completion-date meaning or technician ownership precedence.
